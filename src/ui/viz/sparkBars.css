@@ -1,0 +1,29 @@
+.spark {
+  height: 72px;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 4px;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.spark__bar {
+  border-radius: 8px;
+  min-height: 2px;
+}
+
+.spark__bar--pos {
+  background: rgba(15, 118, 110, 0.8);
+}
+
+.spark__bar--neg {
+  background: rgba(180, 35, 24, 0.75);
+}
+
+.muted {
+  font-size: 13px;
+  color: var(--text);
+}

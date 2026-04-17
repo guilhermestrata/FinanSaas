@@ -1,0 +1,224 @@
+FINANSAAS – API REQUIREMENTS (for another AI / backend generator)
+
+Goal
+Build a backend API for a Financial Planning SPA (React + TS + Zustand + React Query).
+The frontend already calls /api/boleto/parse and /api/ai/projections (currently mocked in Vite).
+We need a real API (HTTP JSON) with clear contracts, validation rules, and basic persistence.
+
+General
+- Base URL: /api
+- Content-Type: application/json
+- Auth: optional for MVP. If you implement auth, use Bearer JWT.
+- Errors: return non-2xx with body {"error":"message","code":"SOME_CODE"}
+- Currency: BRL, values are numbers in reais (e.g. 12.34). Always validate >= 0.
+- Dates: ISO 8601 (YYYY-MM-DD) for due dates and effective dates.
+
+Entities (domain model)
+1) User
+- id: string (uuid)
+- email: string
+
+2) FinanceProfile
+- userId: string
+- netMonthlyIncome: number
+- createdAt: datetime
+- updatedAt: datetime
+
+3) SalaryChange
+- id: string
+- userId: string
+- effectiveFrom: string (YYYY-MM-DD)
+- newNetMonthly: number
+
+4) FixedExpense
+- id: string
+- userId: string
+- name: string
+- amount: number
+- dueDay: number (1..31)
+
+5) Boleto
+- id: string
+- userId: string
+- name: string
+- barcode: string (digits only)
+- kind: "barcode44" | "linhaDigitavel47" | "convenio48"
+- amount: number
+- dueDate?: string (YYYY-MM-DD)  // optional for MVP
+- status: "open" | "paid"
+- createdAt: datetime
+- paidAt?: datetime
+
+Feature Set (MVP)
+A) Boleto barcode reading (NO OCR)
+B) Dashboard projections ("AI")
+C) CRUD for user financial inputs (income, fixed expenses, boletos, salary changes)
+D) Spreadsheet/monthly view endpoint (optional but recommended)
+
+Endpoints
+
+1) Parse boleto code
+POST /api/boleto/parse
+Request:
+{
+  "code": "string" // may contain spaces/dots, server must strip non-digits
+}
+Validation:
+- Accept only 44, 47, or 48 digits after removing non-digits.
+Response 200:
+{
+  "normalized": "string", // digits only
+  "kind": "barcode44" | "linhaDigitavel47" | "convenio48"
+}
+Response 400:
+{ "error": "Código inválido. Informe 44, 47 ou 48 dígitos.", "code": "INVALID_BOLETO_CODE" }
+Notes:
+- For MVP, only validate length.
+- Nice-to-have: implement real check digit validation (DAC) for bank boletos.
+- Nice-to-have: decode amount/due date if supported (bank boleto rules).
+
+2) Get AI projections (backend generates projections + insights)
+POST /api/ai/projections
+Request:
+{
+  "netMonthlyIncome": number,
+  "fixedExpensesMonthly": number,
+  "boletoOpenMonthly": number,
+  "months": number // min 3, max 36
+}
+Response 200:
+{
+  "months": [
+    { "monthIndex": 1, "projectedBalance": number },
+    { "monthIndex": 2, "projectedBalance": number }
+  ],
+  "summary": {
+    "projectedEndBalance": number,
+    "savingsRate": number // 0..1
+  },
+  "insights": string[]
+}
+Validation rules:
+- clamp months to [3..36]
+- values must be finite numbers >= 0
+Logic (acceptable MVP):
+- monthlyBalance = netMonthlyIncome - fixedExpensesMonthly - boletoOpenMonthly
+- projectedBalance at month i: monthlyBalance * i
+- savingsRate = monthlyBalance / netMonthlyIncome (if income > 0 else 0)
+Insights:
+- If monthlyBalance < 0, warn user.
+- If savingsRate < 0.10, suggest increasing savings.
+- If boletoOpenMonthly > 0, mention impact.
+Notes:
+- This endpoint can later call a real LLM (OpenAI/Azure/etc). Keep the contract stable.
+
+User Data CRUD (recommended for real app)
+
+3) Finance profile
+GET /api/finance/profile
+Response 200:
+{
+  "netMonthlyIncome": number
+}
+
+PUT /api/finance/profile
+Request:
+{ "netMonthlyIncome": number }
+Response 200:
+{ "netMonthlyIncome": number }
+
+4) Fixed expenses
+GET /api/fixed-expenses
+Response 200:
+{ "items": FixedExpense[] }
+
+POST /api/fixed-expenses
+Request:
+{ "name": string, "amount": number, "dueDay": number }
+Response 201:
+{ "item": FixedExpense }
+
+DELETE /api/fixed-expenses/:id
+Response 204
+
+5) Boletos
+GET /api/boletos
+Query params optional:
+- status=open|paid
+Response 200:
+{ "items": Boleto[] }
+
+POST /api/boletos
+Request:
+{ "name": string, "code": string, "amount": number, "dueDate"?: string }
+Server behavior:
+- normalize/parse code via same logic as /api/boleto/parse
+- store as barcode digits only + kind
+Response 201:
+{ "item": Boleto }
+
+PATCH /api/boletos/:id
+Request (one of):
+{ "status": "paid" }
+{ "status": "open" }
+Response 200:
+{ "item": Boleto }
+
+DELETE /api/boletos/:id
+Response 204
+
+6) Salary changes
+GET /api/salary-changes
+Response 200:
+{ "items": SalaryChange[] }
+
+POST /api/salary-changes
+Request:
+{ "effectiveFrom": "YYYY-MM-DD", "newNetMonthly": number }
+Response 201:
+{ "item": SalaryChange }
+
+DELETE /api/salary-changes/:id
+Response 204
+
+Spreadsheet / Monthly aggregation (optional, but very useful)
+
+7) Monthly summary table
+POST /api/finance/monthly
+Request:
+{
+  "startMonth": "YYYY-MM", // inclusive
+  "months": number // e.g. 12
+}
+Response 200:
+{
+  "rows": [
+    {
+      "month": "YYYY-MM",
+      "income": number,
+      "fixedExpenses": number,
+      "boletos": number,
+      "balance": number
+    }
+  ]
+}
+Notes:
+- For MVP you can return a repeated monthly snapshot based on current profile.
+- Later version: apply salary changes by effectiveFrom; allocate fixed expenses; allocate boletos by dueDate month.
+
+Non-functional requirements
+- Prefer Node.js (Express/Fastify) or any stack you want, but keep the above HTTP contracts.
+- Use a database for persistence (SQLite/Postgres). MVP can be SQLite.
+- Add request validation (zod/joi/class-validator).
+- CORS enabled for local dev.
+- Provide OpenAPI (swagger) if possible.
+
+Implementation hints
+- Keep normalization logic identical to frontend:
+  digits = code.replace(/\D/g, '')
+  if len 44 => barcode44
+  if len 47 => linhaDigitavel47
+  if len 48 => convenio48
+- Return informative error messages in pt-BR.
+
+END

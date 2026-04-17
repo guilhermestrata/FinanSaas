@@ -1,0 +1,52 @@
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--text-h);
+}
+
+.total td {
+  font-weight: 800;
+  color: var(--text-h);
+  border-top: 1px solid var(--border);
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.muted {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  .two {
+    grid-template-columns: 1fr;
+  }
+}
