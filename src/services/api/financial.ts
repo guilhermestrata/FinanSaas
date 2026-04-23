@@ -1,15 +1,18 @@
 import { apiPost } from './client'
 
 export type ParseBoletoRequest = { code: string }
+
 export type ParseBoletoResponse = {
   normalized: string
   kind: 'barcode44' | 'linhaDigitavel47' | 'convenio48'
-  // placeholders: in a real backend you could decode amount/due date from barcode rules
 }
 
-export async function parseBoletoCode(req: ParseBoletoRequest) {
+export async function parseBoletoCode(
+  req: ParseBoletoRequest
+): Promise<ParseBoletoResponse> {
   return apiPost<ParseBoletoResponse>('/api/boleto/parse', req)
 }
+
 
 export type ProjectionRequest = {
   netMonthlyIncome: number
@@ -24,6 +27,8 @@ export type ProjectionResponse = {
   insights: string[]
 }
 
-export async function getAiProjections(req: ProjectionRequest) {
+export async function getAiProjections(
+  req: ProjectionRequest
+): Promise<ProjectionResponse> {
   return apiPost<ProjectionResponse>('/api/ai/projections', req)
 }

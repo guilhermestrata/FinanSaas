@@ -1,8 +1,12 @@
 import { create } from 'zustand'
 import type { Boleto, FixedExpense, SalaryChange } from '../domain/types'
+import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api/client'
 
-function uid(prefix: string) {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`
+type FinanceResponse = {
+  netMonthlyIncome: number
+  salaryChanges: SalaryChange[]
+  fixedExpenses: FixedExpense[]
+  boletos: Boleto[]
 }
 
 type FinanceState = {
@@ -10,58 +14,135 @@ type FinanceState = {
   salaryChanges: SalaryChange[]
   fixedExpenses: FixedExpense[]
   boletos: Boleto[]
+  loading: boolean
 
-  setNetMonthlyIncome: (value: number) => void
+  fetchAll: () => Promise<void>
 
-  addSalaryChange: (effectiveFrom: string, newNetMonthly: number) => void
-  removeSalaryChange: (id: string) => void
+  setNetMonthlyIncome: (value: number) => Promise<void>
 
-  addFixedExpense: (name: string, amount: number, dueDay: number) => void
-  removeFixedExpense: (id: string) => void
+  addSalaryChange: (effectiveFrom: string, newNetMonthly: number) => Promise<void>
+  removeSalaryChange: (id: string) => Promise<void>
 
-  addBoleto: (boleto: Omit<Boleto, 'id' | 'status'>) => void
-  markBoletoPaid: (id: string) => void
-  removeBoleto: (id: string) => void
+  addFixedExpense: (name: string, amount: number, dueDay: number) => Promise<void>
+  removeFixedExpense: (id: string) => Promise<void>
+
+  addBoleto: (boleto: Omit<Boleto, 'id' | 'status'>) => Promise<void>
+  markBoletoPaid: (id: string) => Promise<void>
+  removeBoleto: (id: string) => Promise<void>
 }
 
-export const useFinanceStore = create<FinanceState>((set) => ({
-  netMonthlyIncome: 5000,
+export const useFinanceStore = create<FinanceState>((set, get) => ({
+  netMonthlyIncome: 0,
   salaryChanges: [],
-  fixedExpenses: [
-    { id: uid('fx'), name: 'Aluguel', amount: 1800, dueDay: 5 },
-    { id: uid('fx'), name: 'Internet', amount: 120, dueDay: 10 },
-  ],
+  fixedExpenses: [],
   boletos: [],
+  loading: false,
 
-  setNetMonthlyIncome: (value) => set({ netMonthlyIncome: value }),
+  fetchAll: async () => {
+    set({ loading: true })
+    try {
+      const data = await apiGet<FinanceResponse>('/api/finance')
 
-  addSalaryChange: (effectiveFrom, newNetMonthly) =>
-    set((s) => ({
-      salaryChanges: [
-        { id: uid('sal'), effectiveFrom, newNetMonthly },
-        ...s.salaryChanges,
-      ],
-    })),
-  removeSalaryChange: (id) =>
-    set((s) => ({ salaryChanges: s.salaryChanges.filter((x) => x.id !== id) })),
+      set({
+        netMonthlyIncome: data.netMonthlyIncome,
+        salaryChanges: data.salaryChanges,
+        fixedExpenses: data.fixedExpenses,
+        boletos: data.boletos,
+        loading: false,
+      })
+    } catch (e) {
+      console.error(e)
+      set({ loading: false })
+    }
+  },
 
-  addFixedExpense: (name, amount, dueDay) =>
-    set((s) => ({
-      fixedExpenses: [{ id: uid('fx'), name, amount, dueDay }, ...s.fixedExpenses],
-    })),
-  removeFixedExpense: (id) =>
-    set((s) => ({ fixedExpenses: s.fixedExpenses.filter((x) => x.id !== id) })),
+  setNetMonthlyIncome: async (value) => {
+    await apiPatch('/api/income', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    })
 
-  addBoleto: (boleto) =>
+    set({ netMonthlyIncome: value })
+  },
+
+  addSalaryChange: async (effectiveFrom, newNetMonthly) => {
+    const res = await apiPost('/api/salary-changes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ effectiveFrom, newNetMonthly }),
+    })
+
+    const created = await (res as Response).json()
+
     set((s) => ({
-      boletos: [{ id: uid('bol'), status: 'open', ...boleto }, ...s.boletos],
-    })),
-  markBoletoPaid: (id) =>
+      salaryChanges: [created, ...s.salaryChanges],
+    }))
+  },
+
+  removeSalaryChange: async (id) => {
+    await apiDelete(`/api/salary-changes/${id}`)
+
     set((s) => ({
-      boletos: s.boletos.map((b) => (b.id === id ? { ...b, status: 'paid' } : b)),
-    })),
-  removeBoleto: (id) =>
-    set((s) => ({ boletos: s.boletos.filter((b) => b.id !== id) })),
+      salaryChanges: s.salaryChanges.filter((x) => x.id !== id),
+    }))
+  },
+
+  addFixedExpense: async (name, amount, dueDay) => {
+    const res = await apiPost<{ item: FixedExpense }>(
+      '/api/fixed-expenses',
+      {
+        name,
+        amount,
+        dueDay,
+      }
+    )
+
+    const created = res.item
+
+    set((s) => ({
+      fixedExpenses: [created, ...s.fixedExpenses],
+    }))
+  },
+
+  removeFixedExpense: async (id) => {
+    await apiDelete(`/api/fixed-expenses/${id}`)
+    await get().fetchAll()
+  },
+
+  addBoleto: async (boleto) => {
+    const res = await apiPost('/api/boletos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(boleto),
+    })
+
+    const created = await (res as Response).json()
+
+    set((s) => ({
+      boletos: [created, ...s.boletos],
+    }))
+  },
+
+  markBoletoPaid: async (id) => {
+    await apiPatch(`/api/boletos/${id}/pay`, {
+      method: 'PATCH',
+    })
+
+    set((s) => ({
+      boletos: s.boletos.map((b) =>
+        b.id === id ? { ...b, status: 'paid' } : b
+      ),
+    }))
+  },
+
+  removeBoleto: async (id) => {
+    await apiDelete(`/api/boletos/${id}`)
+
+    set((s) => ({
+      boletos: s.boletos.filter((b) => b.id !== id),
+    }))
+  },
 }))
 
 export function useFinanceComputed() {

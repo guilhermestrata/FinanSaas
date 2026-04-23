@@ -1,21 +1,39 @@
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string }
+const API_BASE_URL = 'http://127.0.0.1:3001'
 
-export async function apiPost<TResponse>(url: string, body: unknown): Promise<ApiResult<TResponse>> {
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      return { ok: false, error: text || `HTTP ${res.status}` }
-    }
-
-    const data = (await res.json()) as TResponse
-    return { ok: true, data }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+type ApiOptions = RequestInit & {
+  body?: any
 }
+
+async function request<T>(path: string, options?: ApiOptions): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    },
+    method: options?.method || 'GET',
+    body: options?.body ? JSON.stringify(options.body) : undefined,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`API error ${res.status}: ${text}`)
+  }
+
+  if (res.status === 204) {
+    return undefined as T
+  }
+
+  return res.json()
+}
+
+export const apiGet = <T>(path: string) =>
+  request<T>(path)
+
+export const apiPost = <T>(path: string, body: any) =>
+  request<T>(path, { method: 'POST', body })
+
+export const apiPatch = <T>(path: string, body?: any) =>
+  request<T>(path, { method: 'PATCH', body })
+
+export const apiDelete = (path: string) =>
+  request(path, { method: 'DELETE' })
